@@ -11,21 +11,29 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 from pathlib import Path
+import os
+
+import dj_database_url
+from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR.parent / '.env')
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-l!q!daau31@_p%xo+@1k3z08a8znw=3b6__wwx#aup8zx)$ox%'
+SECRET_KEY = os.environ.get('WORKSPACES_SECRET_KEY') or 'django-insecure-development-only-change-me'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('WORKSPACES_DEBUG', 'true').lower() in {'1', 'true', 'yes'}
+if not DEBUG and SECRET_KEY == 'django-insecure-development-only-change-me':
+    raise ImproperlyConfigured('Set WORKSPACES_SECRET_KEY when WORKSPACES_DEBUG is false.')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [host.strip() for host in os.environ.get('WORKSPACES_ALLOWED_HOSTS', '127.0.0.1,localhost,0.0.0.0').split(',') if host.strip()]
 
 
 # Application definition
@@ -37,6 +45,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'identity',
 ]
 
 MIDDLEWARE = [
@@ -70,14 +79,36 @@ WSGI_APPLICATION = 'workspace.wsgi.application'
 
 
 # Database
-# https://docs.djangoproject.com/en/6.1/ref/settings/#databases
-
-DATABASES = {
-    'default': {
+# Workspaces must use its own database. WORKSPACES_DATABASE_URL is preferred;
+# DATABASE_URL is supported for standard deployment platforms. Empty values are
+# ignored so an empty variable in .env cannot select Django's dummy backend.
+database_url = (os.environ.get('WORKSPACES_DATABASE_URL') or os.environ.get('DATABASE_URL') or '').strip()
+if database_url:
+    DATABASES = {'default': dj_database_url.parse(
+        database_url, conn_max_age=600, conn_health_checks=True,
+    )}
+elif any(os.environ.get(key) for key in ('PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT')):
+    if not os.environ.get('PGDATABASE'):
+        raise ImproperlyConfigured('PGDATABASE is required when PostgreSQL environment variables are set.')
+    DATABASES = {'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ['PGDATABASE'],
+        'USER': os.environ.get('PGUSER', ''),
+        'PASSWORD': os.environ.get('PGPASSWORD', ''),
+        'HOST': os.environ.get('PGHOST', ''),
+        'PORT': os.environ.get('PGPORT', ''),
+        'CONN_MAX_AGE': 600,
+        'CONN_HEALTH_CHECKS': True,
+    }}
+elif DEBUG:
+    DATABASES = {'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+    }}
+else:
+    raise ImproperlyConfigured(
+        'Configure WORKSPACES_DATABASE_URL, DATABASE_URL, or PGDATABASE when WORKSPACES_DEBUG is false.'
+    )
 
 
 # Password validation
@@ -115,6 +146,25 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+
+SESSION_COOKIE_NAME = 'workspaces_sessionid'
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 14
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https') if not DEBUG else None
+
+VASTO_ISSUER = os.environ.get('VASTO_ISSUER', 'http://127.0.0.1:8000/o')
+VASTO_DISCOVERY_URL = os.environ.get('VASTO_DISCOVERY_URL', 'http://127.0.0.1:8000/o/.well-known/openid-configuration')
+VASTO_CLIENT_ID = os.environ.get('VASTO_CLIENT_ID', '')
+VASTO_CLIENT_SECRET = os.environ.get('VASTO_CLIENT_SECRET', '')
+VASTO_REDIRECT_URI = os.environ.get('VASTO_REDIRECT_URI', 'http://127.0.0.1:8001/api/auth/vasto/callback/')
+WORKSPACES_FRONTEND_URL = os.environ.get('WORKSPACES_FRONTEND_URL', '')
+IDENTITY_TRANSACTION_TTL_SECONDS = 600
 
 
 # Email
