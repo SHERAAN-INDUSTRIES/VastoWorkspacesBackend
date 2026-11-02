@@ -51,44 +51,43 @@ sequenceDiagram
 
 ## Local setup
 
-### Prerequisites and Python version
+### Prerequisites and automated setup
 
-The repository pins Django 6.1.2 and Authlib 1.9.2 but does not currently declare a Python support range in a version file or README. The local environment used during implementation reported Python 3.14.4. Confirm the supported Python runtime for deployment before selecting a different version.
+The scripts use Bash. Linux users (including Ubuntu and Fedora) and macOS users can run them in their normal terminal. Native Windows setup is not supported or verified: there is no PowerShell bootstrap, and the current scripts depend on Bash and Linux-style paths and file-permission commands. Windows users must use Ubuntu in WSL 2 and run the commands there, not in PowerShell or Command Prompt. Install tools using the [Workspaces README's operating-system setup steps](../../README.md#prepare-your-computer-by-operating-system); install Docker for Vasto using the platform instructions in Vasto's README.
 
-From the Workspaces repository root:
+Use the setup scripts in both repositories for the local integration. Both scripts reuse an activated or existing compatible Python environment, creating `.venv` only if none is found. The Vasto script validates its persistent RSA signing key, starts PostgreSQL and Redis, migrates, selects or creates an admin owner, and registers the Workspaces OAuth client with a private credentials file. It does not start the long-running server.
 
-```sh
-python --version
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-cp .env.example .env
-```
-
-The Django project lives in `workspace/`. Settings load `.env` from the repository root. Start from that directory:
+From the Vasto repository root:
 
 ```sh
-cd workspace
-../.venv/bin/python manage.py migrate
-../.venv/bin/python manage.py check
-../.venv/bin/python manage.py runserver 127.0.0.1:8001
+./scripts/setup-dev.sh --developer YOUR_IDENTIFIER --owner-username YOUR_VASTO_ADMIN_USERNAME
 ```
 
-Local development uses SQLite by default at `workspace/db.sqlite3`. This is inside the Workspaces project and is separate from Vasto's PostgreSQL database. The project also supports PostgreSQL through a Workspaces-specific database URL, a generic deployment `DATABASE_URL`, or PostgreSQL `PG*` variables. See [Database configuration](#database-configuration).
-
-The active settings module is `workspace.settings`. `manage.py` sets it when no explicit module is selected. Run the test suite and transaction cleanup command from `workspace/`:
+Omit the options to enter the developer identifier and owner interactively. Start Vasto with the command printed by the setup script (the example environment path is `.venv`):
 
 ```sh
-../.venv/bin/python manage.py test identity.tests
-../.venv/bin/python manage.py cleanup_auth_transactions
+.venv/bin/python manage.py runserver 127.0.0.1:8000 --settings=pwaninet.settings.local
 ```
 
-The cleanup command deletes expired authorization transaction rows. In deployed environments, schedule it periodically according to the service's operations policy.
+With Vasto running, from the Workspaces repository root:
+
+```sh
+./scripts/setup-dev.sh --credentials-file ~/.config/vasto-workspaces/YOUR_IDENTIFIER-local.env
+```
+
+The Workspaces script prepares its environment, imports credentials without displaying the secret, checks and migrates its own database, and runs the live discovery/JWKS/client preflight. If there is only one generated credential file, it can be auto-detected by running `./scripts/setup-dev.sh` without options; otherwise the script securely prompts for a file or credentials. No separate install, credential import, migration, or preflight commands are needed.
+
+Start Workspaces after setup completes, using the command printed by the script if it selected an environment other than `.venv`:
+
+```sh
+.venv/bin/python workspace/manage.py runserver 127.0.0.1:8001
+```
+
+Local development uses SQLite by default at `workspace/db.sqlite3`, separate from Vasto's PostgreSQL database. You may configure a dedicated Workspaces PostgreSQL database; never point Workspaces at Vasto's database. Run the test suite or expired-transaction cleanup only when you explicitly need those maintenance tasks; setup does not run either one.
 
 ## Environment variables
 
-These names are read directly by `workspace/workspace/settings.py` and documented in the repository `.env.example`.
+The local setup script creates or updates the required `.env` values automatically. The names below are documented for troubleshooting and shared-provider configurations; developers following the local setup steps normally do not need to edit them by hand. These names are read by `workspace/workspace/settings.py` and are documented in the repository `.env.example`.
 
 ### Authentication and session
 
@@ -312,10 +311,10 @@ Future enhancements, not implemented: step-up MFA during new application authori
 
 ## Local end-to-end walkthrough
 
-1. Start Vasto PostgreSQL and Redis, then Vasto at `http://127.0.0.1:8000` with `pwaninet.settings.local`.
-2. Start Workspaces at `http://127.0.0.1:8001` after setting up its `.env`, migrating its own database, and running Django's development server.
-3. In Vasto admin, register an environment-specific confidential Authorization Code Application. Set redirect URI exactly to `http://127.0.0.1:8001/api/auth/vasto/callback/`, leave skip authorization unchecked, and select RS256.
-4. Copy the local client ID and raw client secret securely into Workspaces `.env`. Do not put them in React config. Confirm discovery's issuer is exactly `http://127.0.0.1:8000/o`.
+1. Run Vasto `./scripts/setup-dev.sh --developer YOUR_IDENTIFIER --owner-username YOUR_VASTO_ADMIN_USERNAME`. It validates the key, starts PostgreSQL and Redis, migrates, and registers the confidential local Workspaces client with RS256 and a secure credentials file.
+2. Start Vasto at `http://127.0.0.1:8000` using `pwaninet.settings.local`.
+3. Run Workspaces `./scripts/setup-dev.sh --credentials-file ~/.config/vasto-workspaces/YOUR_IDENTIFIER-local.env`. It imports credentials, migrates its independent database, and runs the discovery/JWKS/client preflight before the browser flow.
+4. Start Workspaces at `http://127.0.0.1:8001`. Do not put the secret in React config. The expected local issuer is `http://127.0.0.1:8000/o`.
 5. Open `http://127.0.0.1:8001/api/auth/vasto/start/` in the browser.
 6. Sign in to an existing Vasto account. A first-time Workspaces grant should show Vasto's consent form; a valid remembered grant may be approved automatically under the configured `auto` policy.
 7. Confirm the browser reaches the Workspaces callback and then the configured frontend URL or local confirmation page.

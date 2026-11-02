@@ -28,126 +28,53 @@ flowchart TD
 
 The public key is safe to publish and is returned by the provider. The private signing key is not. The Workspaces OAuth **client secret** is a third, distinct value: it is generated for the Workspaces Application and authenticates the Workspaces backend at Vasto's token endpoint. It does not sign ID tokens and must never be placed in the frontend.
 
-## Prerequisites
+## Prerequisites and automated setup
 
-You can run a complete local two-server flow when:
+The setup scripts use Bash. Run them directly in a Linux terminal (Ubuntu or Fedora) or macOS Terminal. Native Windows setup is not supported or verified: there is no PowerShell bootstrap, and the current scripts depend on Bash and Linux-style paths and file-permission commands. On Windows, use Ubuntu on WSL 2 and run all repository commands inside its terminal, not PowerShell or Command Prompt. For OS-specific tool installation, follow the [Workspaces README platform instructions](../../README.md#prepare-your-computer-by-operating-system); Vasto's OS-specific Docker instructions are in the Vasto README.
 
-- You have the Vasto repository and its local PostgreSQL/Redis environment configured.
-- If you run your own Vasto provider, its local RSA signing key is generated and loaded by Vasto.
-- Vasto's OAuth/OIDC endpoints are operational.
-- You have the Workspaces repository and its Python environment configured.
-- Workspaces migrations have been applied to its own database.
-- A local Workspaces OAuth client is registered in your Vasto admin (or the team has issued credentials from a shared development Vasto).
-
-Use scenario A if both servers run on your machine. Use scenario B if Workspaces uses a team-operated shared development provider. The shared provider's owner controls its signing key and application registrations.
-
-## Prepare Workspaces locally
-
-### Python and dependencies
-
-The repository pins Django 6.1.2 and Authlib 1.9.2, but it does not declare a supported Python range in a `.python-version` file or README. The development runtime previously observed was Python 3.14.4. Confirm the team deployment runtime before choosing another interpreter.
-
-From the Workspaces repository root:
-
-```sh
-python --version
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-cp .env.example .env
-```
-
-The Django project is in `workspace/`. The settings module is `workspace.settings`; `manage.py` selects it by default. The project loads `.env` from the repository root. For the default local setup, Workspaces uses its own SQLite database at `workspace/db.sqlite3`; it needs no separate Redis service for this integration.
-
-Apply Workspaces migrations and check the project:
-
-```sh
-cd workspace
-../.venv/bin/python manage.py migrate
-../.venv/bin/python manage.py check
-```
-
-Workspaces also supports PostgreSQL for deployment. Configure `WORKSPACES_DATABASE_URL`, `DATABASE_URL`, or `PGDATABASE` plus PostgreSQL connection variables only when using a separately provisioned Workspaces database. Never point Workspaces to Vasto's database.
+For a complete local integration, use the setup script in each backend. Each script reuses an activated or existing compatible Python environment, creating `.venv` only if none is found. The Vasto script validates its developer-owned RSA key, starts PostgreSQL and Redis, applies migrations, selects or creates an admin account, registers the Workspaces OAuth client, and provisions its external credentials file. The Workspaces script imports those credentials, prepares its own environment and database, and runs the live OIDC preflight. Neither script starts the long-running Django server.
 
 ## Scenario A: run both backends locally
 
-### 1. Start your local Vasto provider
+### 1. Prepare and register Vasto
 
-Follow Vasto's standard repository setup from its repository root: create a Python environment, install `requirements.txt`, configure `.env`, and start the repository's PostgreSQL and Redis services:
-
-```sh
-docker compose up -d db redis
-```
-
-The current Vasto Compose file publishes PostgreSQL on host port 5432, while Vasto `.env.example` lists `DB_PORT=5433`. Set your local `.env` to `DB_PORT=5432` for the checked-in Compose configuration, or make both values agree if you intentionally change the Compose mapping. Generate and verify a local signing key by following Vasto's `docs/development/local-oidc-signing-key-setup.md`; the path it uses is Vasto's ignored `.secrets/oidc_rsa_private.pem`.
-
-Run Vasto's migrations and development server in a terminal:
+From the Vasto repository root, run:
 
 ```sh
-python manage.py migrate --settings=pwaninet.settings.local
-python manage.py check --settings=pwaninet.settings.local
-python manage.py runserver 127.0.0.1:8000 --settings=pwaninet.settings.local
+./scripts/setup-dev.sh --developer YOUR_IDENTIFIER --owner-username YOUR_VASTO_ADMIN_USERNAME
 ```
 
-Vasto Admin is at `http://127.0.0.1:8000/admin/`. Its local issuer is `http://127.0.0.1:8000/o`.
+Without these options, the script prompts for a developer identifier and lets you select an active staff account or create a superuser. It completes key validation, Compose startup (`db` and `redis`), database checks, migrations, and OAuth registration in one run. Use `--skip-containers` only when managing those services separately. The client credentials are written to `~/.config/vasto-workspaces/YOUR_IDENTIFIER-local.env` by default.
 
-### 2. Register a Workspaces client in Vasto Admin
-
-The OAuth client registration belongs in **Vasto Admin**, not Workspaces Admin. Sign in using an authorized Vasto staff account. Open **OAuth2 Provider → Applications → Add application** and create a separate local record for your local Workspaces backend.
-
-Use these settings:
-
-| Application field | Local value | Notes |
-|---|---|---|
-| Name | `Vasto Workspaces (Local)` or another clear developer-specific local name | The inspected local registration uses `Vasto Workspaces (Local)`. Independent local providers should have their own record. |
-| User | An authorized Vasto admin/owner | This is the registration owner, not the person who will later sign in through Workspaces. |
-| Client type | Confidential | The secret stays in the Workspaces backend. |
-| Authorization grant type | Authorization code | Workspaces uses the browser authorization-code flow. |
-| Redirect URIs | `http://127.0.0.1:8001/api/auth/vasto/callback/` | Match the Workspaces setting exactly, including the trailing slash. |
-| Post logout redirect URIs | Leave unset | Workspaces does not implement global or provider logout. |
-| Skip authorization | Unchecked | Vasto may show its consent form for a new grant. Remembered grants can be approved automatically by Vasto's `auto` policy. |
-| Algorithm | RSA with SHA-2 256 (`RS256`) | Matches Vasto's RSA signing configuration. |
-| Hash client secret | Enabled | Copy the new secret before saving; a hashed secret cannot be read back as plaintext. |
-| Allowed origins | Leave blank for this server-side backend client | This is not React CORS configuration. |
-| Registration source | `manual` (admin-created) | Vasto/DOT records admin-created Applications as manual registrations. |
-
-Save the Application and securely capture the generated **Client ID** and **Client Secret** for your Workspaces `.env`. The client secret is separate from the Vasto RSA signing key. Do not send credentials to another developer or reuse the repository owner's personal client secret. If a secret is lost or exposed, reset it for this Application in Vasto Admin, capture the new plaintext value before saving, update Workspaces `.env`, and restart Workspaces. If tokens were also exposed, revoke only the affected application's tokens/grants in Vasto.
-
-### 3. Configure Workspaces client settings
-
-The implemented variable names are `VASTO_DISCOVERY_URL`, `VASTO_ISSUER`, `VASTO_CLIENT_ID`, `VASTO_CLIENT_SECRET`, and `VASTO_REDIRECT_URI` (the variable names in this repository do not use the illustrative `VASTO_OIDC_*` prefix). Put the client ID and secret in the Workspaces backend `.env` only:
-
-```env
-WORKSPACES_SECRET_KEY=your-local-django-secret
-WORKSPACES_DEBUG=true
-WORKSPACES_ALLOWED_HOSTS=127.0.0.1,localhost
-
-VASTO_DISCOVERY_URL=http://127.0.0.1:8000/o/.well-known/openid-configuration
-VASTO_ISSUER=http://127.0.0.1:8000/o
-VASTO_CLIENT_ID=your_local_client_id
-VASTO_CLIENT_SECRET=your_local_client_secret
-VASTO_REDIRECT_URI=http://127.0.0.1:8001/api/auth/vasto/callback/
-
-WORKSPACES_FRONTEND_URL=
-```
-
-`VASTO_DISCOVERY_URL` tells Authlib where provider metadata lives; `VASTO_ISSUER` is checked against discovery and the ID token; the client ID and secret identify/authenticate this backend Application; and `VASTO_REDIRECT_URI` must match Vasto Admin exactly. If `WORKSPACES_FRONTEND_URL` is blank, successful callback shows a simple development confirmation page. It is a redirect destination, not a CORS allow-list.
-
-Never place the client secret in React `.env` files or browser JavaScript. Never commit the Workspaces `.env`. Workspaces must not have `OIDC_RSA_PRIVATE_KEY` or a copy of Vasto's `.secrets` directory.
-
-### 4. Start Workspaces
-
-In a second terminal, from the Workspaces repository root, with its virtual environment active:
+Start the prepared provider in a terminal. The example uses `.venv`; if setup reused another environment, use the exact server command printed by the script:
 
 ```sh
-cd workspace
-../.venv/bin/python manage.py migrate
-../.venv/bin/python manage.py check
-../.venv/bin/python manage.py runserver 127.0.0.1:8001
+.venv/bin/python manage.py runserver 127.0.0.1:8000 --settings=pwaninet.settings.local
 ```
 
-Workspaces is now available at `http://127.0.0.1:8001`. Use `127.0.0.1` consistently in both repositories; do not mix it with `localhost` during the same sign-in. The browser treats these hostnames as different cookie scopes. Ports do not isolate cookies, so the apps use distinct local session cookie names.
+Vasto Admin is at `http://127.0.0.1:8000/admin/`; the local issuer is `http://127.0.0.1:8000/o`.
+
+### 2. Prepare Workspaces and verify the provider
+
+With Vasto running, from the Workspaces repository root run:
+
+```sh
+./scripts/setup-dev.sh --credentials-file ~/.config/vasto-workspaces/YOUR_IDENTIFIER-local.env
+```
+
+With no option, Workspaces automatically uses the only generated credentials file if there is one; otherwise it prompts for a file or securely collects the values. The script imports credentials without displaying the secret, checks and migrates the Workspaces-owned database, then runs `check_vasto_oidc` against live discovery and client registration. If preflight fails, fix the reported mismatch and rerun the same setup script. No separate migration, credential-import, or preflight command is needed.
+
+Workspaces uses its own SQLite database at `workspace/db.sqlite3` by default. You may configure its own PostgreSQL database separately; never point Workspaces at Vasto's database.
+
+### 3. Start Workspaces and test login
+
+Start the prepared backend in another terminal. If setup reused an environment other than `.venv`, use the exact server command printed by its script:
+
+```sh
+.venv/bin/python workspace/manage.py runserver 127.0.0.1:8001
+```
+
+Then open `http://127.0.0.1:8001/api/auth/vasto/start/` and complete the browser sign-in below. Keep both servers on `127.0.0.1` consistently.
 
 ## Scenario B: Workspaces against shared development Vasto
 
