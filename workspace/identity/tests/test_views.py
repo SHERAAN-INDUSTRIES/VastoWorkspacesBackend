@@ -71,10 +71,35 @@ class IdentityEndpointTests(TestCase):
             oauth_client.return_value.load_server_metadata.return_value = {'issuer': 'http://127.0.0.1:8000/o'}
             oauth_client.return_value.fetch_access_token.return_value = {'access_token': 'secret'}
             validate.return_value = {'issuer': 'http://127.0.0.1:8000/o', 'subject': 'sub', 'username': 'alice', 'email': '', 'email_verified': False}
-            result = self.client.get(reverse('vasto-callback'), {'state': item.state, 'code': 'authorization-code'})
+            with override_settings(WORKSPACES_FRONTEND_URL=''):
+                result = self.client.get(reverse('vasto-callback'), {
+                    'state': item.state, 'code': 'authorization-code',
+                    'iss': 'http://127.0.0.1:8000/o',
+                })
         self.assertEqual(result.status_code, 200)
         self.assertTrue('_auth_user_id' in self.client.session)
         self.assertEqual(VastoIdentity.objects.count(), 1)
+
+    def test_callback_logs_safe_oauth_error_code(self):
+        from authlib.integrations.base_client import OAuthError
+
+        with patch('identity.views.client') as starter:
+            starter.return_value.create_authorization_url.return_value = {'url': 'https://vasto.example/auth'}
+            self.client.get(reverse('vasto-start'))
+        item = AuthorizationTransaction.objects.get()
+        with patch('identity.views.client') as oauth_client, self.assertLogs('identity.views', level='WARNING') as logs:
+            oauth_client.return_value.load_server_metadata.return_value = {'issuer': 'http://127.0.0.1:8000/o'}
+            oauth_client.return_value.fetch_access_token.side_effect = OAuthError(
+                error='invalid_client', description='sensitive provider response',
+            )
+            result = self.client.get(reverse('vasto-callback'), {
+                'state': item.state, 'code': 'authorization-code',
+            })
+
+        self.assertEqual(result.status_code, 401)
+        self.assertIn('authorization code exchange', logs.output[0])
+        self.assertIn('error=invalid_client', logs.output[0])
+        self.assertNotIn('sensitive provider response', logs.output[0])
 
     def test_me_requires_auth_and_returns_approved_profile(self):
         self.assertEqual(self.client.get(reverse('auth-me')).status_code, 401)
