@@ -56,19 +56,28 @@ def vasto_callback(request):
     if not code:
         return _error_response('Authorization response did not contain a code.')
 
+    stage = 'OAuth client setup'
     try:
         oauth_client = client()
         metadata = oauth_client.load_server_metadata()
         if metadata.get('issuer') != settings.VASTO_ISSUER:
             return _error_response('Vasto discovery issuer mismatch.', 502)
+        stage = 'authorization code exchange'
         token = oauth_client.fetch_access_token(
             code=code, redirect_uri=settings.VASTO_REDIRECT_URI,
             code_verifier=item.code_verifier,
         )
+        stage = 'identity validation'
         claims = validate_identity(token, item.nonce)
+        stage = 'local user mapping'
         user = _get_or_create_user(claims)
     except (OAuthError, JoseError, ValueError) as exc:
-        logger.info('Vasto authorization rejected: %s', type(exc).__name__)
+        error_code = exc.error if isinstance(exc, (OAuthError, JoseError)) else None
+        logger.warning(
+            'Vasto authorization rejected during %s (%s%s).',
+            stage, type(exc).__name__,
+            f', error={error_code}' if error_code else '',
+        )
         return _error_response('Vasto authorization could not be validated.', 401)
     except Exception:
         logger.exception('Vasto callback failed.')
