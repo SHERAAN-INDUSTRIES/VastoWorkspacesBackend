@@ -169,15 +169,15 @@ Workspaces loads discovery metadata and requires its `issuer` to equal `VASTO_IS
 
 Authlib's `parse_id_token` validates the ID-token signature using the discovered JWKS, issuer, audience, expiration, and saved nonce. The code also explicitly requires the discovery issuer to match `VASTO_ISSUER` and rejects an ID token with no `sub`. It then fetches UserInfo over the server-side client and requires UserInfo `sub` to match the signed ID-token `sub`.
 
-Only `issuer`, `subject`, `username`, `email`, and `email_verified` are retained locally. `issuer` and `subject` come from the ID token; username, email, and email-verification status come from UserInfo. Workspaces accepts `preferred_username` (with `name` as a fallback) for the local username. Email may be empty, and `email_verified` is true only when UserInfo returns the Boolean value `true`.
+Workspaces retains `issuer`, `subject`, username, names, email, email-verification status, and the Vasto profile-picture URL. `issuer` and `subject` come from the ID token; the profile fields come from UserInfo. Workspaces accepts `preferred_username` (with `name` as a fallback) for the local username. Email may be empty, and `email_verified` is true only when UserInfo returns the Boolean value `true`.
 
 Authlib consumes the discovery JWKS rather than a hard-coded Vasto public key. The Workspaces repository has no custom JWKS cache or key-rotation implementation; provider metadata and key handling are delegated to Authlib. The implementation's exact refresh behavior for a key rotation depends on the pinned Authlib version and should be confirmed before relying on unusual rotation procedures.
 
 ## Identity mapping
 
-`VastoIdentity` is one-to-one with the local Django user and has a database uniqueness constraint on `(issuer, subject)`. The local identity row stores issuer, subject, username, email, email verification status, and timestamps. The local Django username is made unique from the incoming username (or subject fallback). The local user is created with an unusable password.
+`VastoIdentity` is one-to-one with the local Django user and has a database uniqueness constraint on `(issuer, subject)`. The local identity row stores issuer, subject, username, email, email-verification status, profile-picture URL, and timestamps. Names are copied to the Workspaces Django user. The local Django username is made unique from the incoming username (or subject fallback). The local user is created with an unusable password.
 
-- **Returning identity:** the existing `(issuer, subject)` mapping is found; username, email, and email verification snapshot are updated, and the same local user is returned.
+- **Returning identity:** the existing `(issuer, subject)` mapping is found; its profile claims are refreshed, and the same local user is returned.
 - **New identity:** Workspaces creates a local Django user and a `VastoIdentity` mapping.
 - **Same email, different subject:** the implementation does not merge by email. It treats the different `(issuer, subject)` as a separate identity and creates a separate local account, with a unique local username.
 - **Concurrent first callback:** a uniqueness conflict falls back to fetching the identity row inserted by the concurrent request.
@@ -235,11 +235,24 @@ Do not manually visit or refresh a callback URL. The transaction is single-use a
 
   ```json
   {
+    "status": "success",
+    "message": "Authenticated user profile retrieved successfully.",
     "authenticated": true,
-    "identity": {
+    "user": {
+      "id": 42,
       "username": "sample-user",
+      "first_name": "Sample",
+      "last_name": "User",
+      "display_name": "Sample User",
       "email": "sample@example.test",
-      "email_verified": true
+      "email_verified": true,
+      "profile_picture": "https://pwaninet.app/media/profile_pic/sample.jpg",
+      "status": "active"
+    },
+    "session": {
+      "status": "active",
+      "expires_at": "2026-11-03T13:30:00+00:00",
+      "expires_in_seconds": 50400
     }
   }
   ```
@@ -247,8 +260,10 @@ Do not manually visit or refresh a callback URL. The transaction is single-use a
 - **Unauthenticated or unmapped session:** `401 application/json`:
 
   ```json
-  {"authenticated": false}
+  {"status": "error", "message": "Authentication is required.", "authenticated": false}
   ```
+
+The user ID is the local Workspaces database ID. `profile_picture` may be `null` when Vasto has no profile image. The session response includes expiry information only; the session key remains in the HttpOnly cookie and is never returned in JSON.
 
 The endpoint does not expose `subject`, access tokens, or the client secret.
 

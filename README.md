@@ -126,11 +126,12 @@ For contributors, run automated tests or expired-transaction cleanup as separate
 
 - `GET /api/auth/vasto/start/` — starts authorization with state, nonce, and PKCE S256.
 - `GET /api/auth/vasto/callback/` — consumes the browser bound transaction, exchanges the code using `client_secret_basic`, validates OIDC claims and creates/retrieves the local mapping.
-- `GET /api/auth/me/` — returns an authenticated local identity's approved username and email fields; otherwise responds 401.
+- `GET /api/auth/me/` — returns the authenticated Workspaces user profile, Vasto profile-picture URL, account status, and non-secret session expiry metadata; otherwise responds 401. The session key stays in the HttpOnly cookie.
 - `POST /api/auth/logout/` — CSRF protected logout of the local Django session only.
 
 ## Authentication documentation
 
+- [Authentication route reference](docs/api/vasto-workspaces-auth-routes.md) — route methods, request behavior, response examples, status codes, and how Vasto and Workspaces connect.
 - [Vasto OIDC client and authentication API](docs/authentication/vasto-oidc-client.md) — Workspaces OIDC flow, environment setup, identity mapping, sessions, API contract, and troubleshooting.
 
 React frontend setup and integration documentation are maintained separately by the frontend team.

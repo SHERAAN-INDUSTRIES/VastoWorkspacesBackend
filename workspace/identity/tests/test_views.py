@@ -82,7 +82,13 @@ class IdentityEndpointTests(TestCase):
         self.client.force_login(user)
         response = self.client.get(reverse('auth-me'))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['identity']['username'], 'alice')
+        payload = response.json()
+        self.assertEqual(payload['status'], 'success')
+        self.assertEqual(payload['user']['id'], user.pk)
+        self.assertEqual(payload['user']['username'], 'alice')
+        self.assertEqual(payload['user']['profile_picture'], None)
+        self.assertIn('expires_at', payload['session'])
+        self.assertNotIn('session_key', payload['session'])
         self.assertNotIn('subject', response.content.decode())
 
     def test_logout_requires_auth_and_terminates_session(self):

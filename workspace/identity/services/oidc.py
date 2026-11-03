@@ -23,6 +23,9 @@ def validate_identity(token, nonce):
     return {
         'issuer': id_claims.get('iss'), 'subject': id_claims.get('sub'),
         'username': userinfo.get('preferred_username') or userinfo.get('name') or '',
+        'first_name': userinfo.get('given_name') or '',
+        'last_name': userinfo.get('family_name') or '',
         'email': userinfo.get('email') or '',
         'email_verified': userinfo.get('email_verified') is True,
+        'picture': userinfo.get('picture') or '',
     }

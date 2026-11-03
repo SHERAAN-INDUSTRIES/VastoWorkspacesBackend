@@ -9,6 +9,7 @@ class VastoIdentity(models.Model):
     username = models.CharField(max_length=150, blank=True)
     email = models.EmailField(blank=True)
     email_verified = models.BooleanField(default=False)
+    picture = models.URLField(max_length=2048, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

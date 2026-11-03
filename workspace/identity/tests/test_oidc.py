@@ -19,7 +19,10 @@ class OIDCValidationTests(SimpleTestCase):
             nonce='nonce-value', claims_options={'iss': {'values': ['https://vasto.example']}},
         )
         self.assertEqual(result['subject'], 'subject')
-        self.assertEqual(set(result), {'issuer', 'subject', 'username', 'email', 'email_verified'})
+        self.assertEqual(set(result), {
+            'issuer', 'subject', 'username', 'first_name', 'last_name', 'email',
+            'email_verified', 'picture',
+        })
 
     def test_signature_audience_expiry_and_nonce_validation_errors_are_not_bypassed(self):
         for failure in ('invalid signature', 'invalid audience', 'expired token', 'nonce mismatch'):

@@ -91,11 +91,23 @@ def _get_or_create_user(claims):
                 mapping.username = claims['username']
                 mapping.email = claims['email']
                 mapping.email_verified = claims['email_verified']
-                mapping.save(update_fields=('username', 'email', 'email_verified', 'updated_at'))
+                mapping.picture = claims.get('picture', '')
+                mapping.save(update_fields=(
+                    'username', 'email', 'email_verified', 'picture', 'updated_at',
+                ))
+                user = mapping.user
+                user.first_name = claims.get('first_name', '')
+                user.last_name = claims.get('last_name', '')
+                user.save(update_fields=('first_name', 'last_name'))
                 return mapping.user
 
             username = _unique_username(User, claims['username'] or claims['subject'])
-            user = User.objects.create_user(username=username, email=claims['email'])
+            user = User.objects.create_user(
+                username=username,
+                email=claims['email'],
+                first_name=claims.get('first_name', ''),
+                last_name=claims.get('last_name', ''),
+            )
             user.set_unusable_password()
             user.save(update_fields=('password',))
             VastoIdentity.objects.create(user=user, **claims)
@@ -121,17 +133,39 @@ def _unique_username(User, preferred):
 @require_GET
 def me(request):
     if not request.user.is_authenticated:
-        return JsonResponse({'authenticated': False}, status=401)
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Authentication is required.',
+            'authenticated': False,
+        }, status=401)
     try:
         identity = request.user.vasto_identity
     except VastoIdentity.DoesNotExist:
-        return JsonResponse({'authenticated': False}, status=401)
+        return JsonResponse({
+            'status': 'error',
+            'message': 'No Vasto identity is linked to this session.',
+            'authenticated': False,
+        }, status=401)
+    session = request.session
     return JsonResponse({
+        'status': 'success',
+        'message': 'Authenticated user profile retrieved successfully.',
         'authenticated': True,
-        'identity': {
-            'username': identity.username,
+        'user': {
+            'id': request.user.pk,
+            'username': request.user.username,
+            'first_name': request.user.first_name,
+            'last_name': request.user.last_name,
+            'display_name': ' '.join(filter(None, (request.user.first_name, request.user.last_name))) or identity.username,
             'email': identity.email,
             'email_verified': identity.email_verified,
+            'profile_picture': identity.picture or None,
+            'status': 'active' if request.user.is_active else 'inactive',
+        },
+        'session': {
+            'status': 'active',
+            'expires_at': session.get_expiry_date().isoformat(),
+            'expires_in_seconds': session.get_expiry_age(),
         },
     })
 

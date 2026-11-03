@@ -124,16 +124,29 @@ The discovery issuer and signed ID-token `iss` must match Workspaces `VASTO_ISSU
 
    ```json
    {
+     "status": "success",
+     "message": "Authenticated user profile retrieved successfully.",
      "authenticated": true,
-     "identity": {
+     "user": {
+       "id": 1,
        "username": "sample-user",
+       "first_name": "Sample",
+       "last_name": "User",
+       "display_name": "Sample User",
        "email": "sample@example.test",
-       "email_verified": true
+       "email_verified": true,
+       "profile_picture": "https://pwaninet.app/media/profile_pic/sample.jpg",
+       "status": "active"
+     },
+     "session": {
+       "status": "active",
+       "expires_at": "2026-11-03T13:30:00+00:00",
+       "expires_in_seconds": 50400
      }
    }
    ```
 
-   The current Workspaces identity data is username, email, and email verification status. It does not yet import profile image, bio, institution, or course details.
+   Workspaces imports the OIDC profile fields needed by the frontend: local user ID, username, names, email and verification status, and profile-picture URL. It does not expose the raw session key; the browser keeps that in its HttpOnly cookie. Bio, institution, and course data are not included in the current OIDC profile contract.
 
 9. Refresh `/api/auth/me/`. It should continue to report authenticated while the Workspaces session remains valid.
 10. Workspaces logout is `POST /api/auth/logout/` and requires CSRF. The backend does not currently expose a dedicated CSRF bootstrap endpoint, and its CSRF cookie is HttpOnly. Use an approved secure token-bootstrap mechanism if your local frontend/deployment provides one; without that, the browser logout request is expected to return 403. Do not disable CSRF to force the test. A successful logout returns `{"authenticated":false,"logged_out":true}`; a subsequent `/api/auth/me/` returns 401.
