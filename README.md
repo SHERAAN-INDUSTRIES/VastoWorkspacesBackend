@@ -124,10 +124,73 @@ For contributors, run automated tests or expired-transaction cleanup as separate
 
 ## Endpoints
 
+### Authentication
 - `GET /api/auth/vasto/start/` — starts authorization with state, nonce, and PKCE S256.
 - `GET /api/auth/vasto/callback/` — consumes the browser bound transaction, exchanges the code using `client_secret_basic`, validates OIDC claims and creates/retrieves the local mapping.
 - `GET /api/auth/me/` — returns the authenticated Workspaces user profile, Vasto profile-picture URL, account status, and non-secret session expiry metadata; otherwise responds 401. The session key stays in the HttpOnly cookie.
 - `POST /api/auth/logout/` — CSRF protected logout of the local Django session only.
+
+### Cached Data API (requires authentication)
+- `GET /api/auth/user/profile/` — Get cached user profile from Pwaninet
+- `GET /api/auth/user/documents/` — Get cached user documents
+- `GET /api/auth/user/institution/` — Get cached user institution
+- `GET /api/auth/user/courses/` — Get cached user courses
+- `GET /api/auth/user/groups/` — Get cached user groups
+- `GET /api/auth/user/notifications/` — Get cached user notifications
+- `GET /api/auth/user/conversations/` — Get cached user conversations
+- `POST /api/auth/user/sync/` — Manually trigger data sync for current user
+
+All data endpoints support `?refresh=true` query parameter to force a fresh sync from Pwaninet.
+
+## Data Synchronization Architecture
+
+Workspaces acts as a caching layer between the frontend and Pwaninet. The frontend only communicates with Workspaces; Workspaces fetches data from Pwaninet's internal API and caches it locally.
+
+### Flow
+```
+Frontend → Workspaces API → Cache Check → 
+  - Cache hit: Return cached data
+  - Cache miss: Fetch from Pwaninet → Update Cache → Return data
+```
+
+### Cache Strategy
+- **Redis**: Hot cache for frequently accessed data (2 min - 24 hours TTL)
+- **Database**: Persistent cache for offline access
+- **Background Sync**: Celery tasks sync data daily/hourly/incrementally
+
+### Scheduled Sync Tasks
+- Daily full sync: 2 AM
+- Hourly incremental sync: Every hour
+- Notifications sync: Every 2 minutes (active users)
+- Conversations sync: Every 5 minutes (active users)
+- Groups sync: Every 6 hours
+- Cache cleanup: 3:30 AM daily
+
+### Environment Variables
+
+```bash
+# Pwaninet Internal API
+VASTO_API_BASE_URL=http://127.0.0.1:8000
+VASTO_SERVICE_TOKEN=<token-from-pwaninet>
+
+# Redis Configuration (defaults shown)
+# CELERY_BROKER_URL=redis://127.0.0.1:6379/3
+# CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/4
+# REDIS_CACHE_URL=redis://127.0.0.1:6379/2
+```
+
+### Running Celery
+
+```bash
+# Start Celery worker
+cd workspace && ../.venv/bin/celery -A workspace worker --loglevel=info --concurrency=2
+
+# Start Celery Beat scheduler
+cd workspace && ../.venv/bin/celery -A workspace beat --loglevel=info
+
+# Monitor with Flower
+cd workspace && ../.venv/bin/flower -A workspace --port=5555
+```
 
 ## Authentication documentation
 

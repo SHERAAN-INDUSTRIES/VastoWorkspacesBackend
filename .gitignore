@@ -1,2 +1,6 @@
 # Created by venv; see https://docs.python.org/3/library/venv.html
 *
+
+# Local development scripts (not for version control)
+start-workspace.sh
+workspace-worker.sh

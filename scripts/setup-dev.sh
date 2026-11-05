@@ -74,7 +74,32 @@ else
 fi
 "$PY" -m pip install --upgrade pip >/dev/null || { printf 'Could not upgrade pip. Check network/package-index access.\n' >&2; exit 1; }
 "$PY" -m pip install -r requirements.txt || { printf 'Dependency installation failed. Review the error above and repository requirements.\n' >&2; exit 1; }
+"$PY" -m pip install celery redis django-redis django-celery-beat django-celery-results flower packaging || { printf 'Failed to install Celery/Redis dependencies.\n' >&2; exit 1; }
 "$PY" -m pip check || { printf 'Installed dependencies have conflicts.\n' >&2; exit 1; }
+
+# Check if Redis is running
+if ! command -v redis-cli >/dev/null 2>&1; then
+  printf 'Redis is not installed. Please install Redis or use a managed Redis service.\n' >&2
+  printf 'For local development: sudo apt install redis-server\n' >&2
+  printf 'Then start Redis: redis-server\n' >&2
+  exit 1
+fi
+
+if ! redis-cli ping >/dev/null 2>&1; then
+  printf 'Redis is not running. Starting Redis server...\n'
+  if command -v redis-server >/dev/null 2>&1; then
+    redis-server --daemonize yes >/dev/null 2>&1
+    sleep 2
+    if ! redis-cli ping >/dev/null 2>&1; then
+      printf 'Failed to start Redis server. Please start it manually.\n' >&2
+      exit 1
+    fi
+    printf 'Redis server started successfully.\n'
+  else
+    printf 'Redis server not found. Please install and start Redis.\n' >&2
+    exit 1
+  fi
+fi
 
 if [[ ! -e .env ]]; then
   [[ -f .env.example ]] || { printf 'Missing .env.example.\n' >&2; exit 1; }
@@ -90,29 +115,49 @@ if ! grep -Eq '^WORKSPACES_SECRET_KEY=.{20,}$' .env; then
   unset secret
   printf 'Generated a local Django secret key in .env (value not displayed).\n'
 fi
-if [[ -n "$CREDENTIALS_FILE" ]]; then
-  "$PY" scripts/import-oidc-credentials.py "$CREDENTIALS_FILE" || exit $?
-elif ((INTERACTIVE)); then
-  "$PY" scripts/import-oidc-credentials.py --interactive || exit $?
+
+# Set VASTO_API_BASE_URL if not present
+if ! grep -q '^VASTO_API_BASE_URL=' .env; then
+  echo "VASTO_API_BASE_URL=http://127.0.0.1:8000" >> .env
+  echo "Set VASTO_API_BASE_URL to localhost."
+fi
+
+# Check for VASTO_SERVICE_TOKEN
+if ! grep -q '^VASTO_SERVICE_TOKEN=.' .env; then
+  printf 'VASTO_SERVICE_TOKEN not found in .env\n' >&2
+  printf 'Please run Pwaninet setup-dev.sh first to generate the service token.\n' >&2
+  printf 'Then copy the VASTO_SERVICE_TOKEN value from Pwaninet .env to Workspaces .env\n' >&2
+  exit 1
+fi
+
+# Check if OAuth credentials are already configured
+if grep -q '^VASTO_CLIENT_ID=.' .env && grep -q '^VASTO_CLIENT_SECRET=.' .env; then
+  printf 'OAuth credentials already configured in .env, skipping credential import.\n'
 else
-  shopt -s nullglob
-  local_credentials=("$HOME"/.config/vasto-workspaces/*-local.env)
-  shopt -u nullglob
-  if ((${#local_credentials[@]} == 1)); then
-    "$PY" scripts/import-oidc-credentials.py "${local_credentials[0]}" || exit $?
-  elif [[ -t 0 ]]; then
-    if ((${#local_credentials[@]} > 1)); then
-      printf 'Found multiple local Vasto credential files.\n'
-      read -r -p 'Enter the file path to use (blank to enter credentials): ' CREDENTIALS_FILE
-    fi
-    if [[ -n "$CREDENTIALS_FILE" ]]; then
-      "$PY" scripts/import-oidc-credentials.py "$CREDENTIALS_FILE" || exit $?
-    else
-      "$PY" scripts/import-oidc-credentials.py --interactive || exit $?
-    fi
+  if [[ -n "$CREDENTIALS_FILE" ]]; then
+    "$PY" scripts/import-oidc-credentials.py "$CREDENTIALS_FILE" || exit $?
+  elif ((INTERACTIVE)); then
+    "$PY" scripts/import-oidc-credentials.py --interactive || exit $?
   else
-    printf 'No Vasto credentials file was selected. Pass --credentials-file PATH or run this script in a terminal for hidden interactive setup.\n' >&2
-    exit 1
+    shopt -s nullglob
+    local_credentials=("$HOME"/.config/vasto-workspaces/*-local.env)
+    shopt -u nullglob
+    if ((${#local_credentials[@]} == 1)); then
+      "$PY" scripts/import-oidc-credentials.py "${local_credentials[0]}" || exit $?
+    elif [[ -t 0 ]]; then
+      if ((${#local_credentials[@]} > 1)); then
+        printf 'Found multiple local Vasto credential files.\n'
+        read -r -p 'Enter the file path to use (blank to enter credentials): ' CREDENTIALS_FILE
+      fi
+      if [[ -n "$CREDENTIALS_FILE" ]]; then
+        "$PY" scripts/import-oidc-credentials.py "$CREDENTIALS_FILE" || exit $?
+      else
+        "$PY" scripts/import-oidc-credentials.py --interactive || exit $?
+      fi
+    else
+      printf 'No Vasto credentials file was selected. Pass --credentials-file PATH or run this script in a terminal for hidden interactive setup.\n' >&2
+      exit 1
+    fi
   fi
 fi
 cd "$ROOT/workspace"
@@ -120,4 +165,12 @@ cd "$ROOT/workspace"
 "$PY" manage.py shell -c 'from django.db import connection; connection.ensure_connection()' >/dev/null 2>&1 || { printf 'Workspaces database is not accessible. Check WORKSPACES_DATABASE_URL or local SQLite permissions; no migrations were run.\n' >&2; exit 1; }
 "$PY" manage.py migrate || { printf 'Database migration failed.\n' >&2; exit 1; }
 "$PY" manage.py check_vasto_oidc || { printf 'Vasto OIDC preflight failed. Start Vasto at 127.0.0.1:8000, verify its registration and credentials, then rerun this setup script.\n' >&2; exit 1; }
-printf 'Workspaces setup and Vasto OIDC preflight are complete. Start Workspaces with: %q %q runserver 127.0.0.1:8001\n' "$PY" "$ROOT/workspace/manage.py"
+
+printf 'Workspaces setup and Vasto OIDC preflight are complete.\n'
+printf 'Start Workspaces with: %q %q runserver 127.0.0.1:8001\n' "$PY" "$ROOT/workspace/manage.py"
+printf '\nTo start Celery worker (in another terminal):\n'
+printf '  cd %q && %q celery -A workspace worker --loglevel=info --concurrency=2\n' "$ROOT/workspace" "$PY"
+printf '\nTo start Celery Beat scheduler (in another terminal):\n'
+printf '  cd %q && %q celery -A workspace beat --loglevel=info\n' "$ROOT/workspace" "$PY"
+printf '\nTo monitor Celery with Flower (in another terminal):\n'
+printf '  cd %q && %q flower -A workspace --port=5555\n' "$ROOT/workspace" "$PY"

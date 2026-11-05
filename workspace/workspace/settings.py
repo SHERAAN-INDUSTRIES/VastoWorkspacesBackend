@@ -45,6 +45,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'django_celery_beat',
+    'django_celery_results',
     'identity',
 ]
 
@@ -165,6 +168,98 @@ VASTO_CLIENT_SECRET = os.environ.get('VASTO_CLIENT_SECRET', '')
 VASTO_REDIRECT_URI = os.environ.get('VASTO_REDIRECT_URI', 'http://127.0.0.1:8001/api/auth/vasto/callback/')
 WORKSPACES_FRONTEND_URL = os.environ.get('WORKSPACES_FRONTEND_URL', '')
 IDENTITY_TRANSACTION_TTL_SECONDS = 600
+
+# Pwaninet Internal API Configuration
+VASTO_API_BASE_URL = os.environ.get('VASTO_API_BASE_URL', 'http://127.0.0.1:8000')
+VASTO_SERVICE_TOKEN = os.environ.get('VASTO_SERVICE_TOKEN', '')
+
+# Redis Configuration for caching
+# Pwaninet uses DB 0 (Celery) and DB 1 (Cache/Channels)
+# Workspaces uses DB 2 (Cache), DB 3 (Celery broker), DB 4 (Celery results)
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://127.0.0.1:6379/3')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://127.0.0.1:6379/4')
+
+# Django Cache Configuration
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': os.environ.get('REDIS_CACHE_URL', 'redis://127.0.0.1:6379/2'),
+        'TIMEOUT': 300,  # 5 minutes default
+        'KEY_PREFIX': 'workspaces',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        }
+    }
+}
+
+# REST Framework Configuration
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+}
+
+# Cache TTL Settings (seconds)
+CACHE_PROFILE_TTL = int(os.environ.get('CACHE_PROFILE_TTL', '3600'))      # 1 hour
+CACHE_DOCUMENTS_TTL = int(os.environ.get('CACHE_DOCUMENTS_TTL', '900'))   # 15 min
+CACHE_INSTITUTION_TTL = int(os.environ.get('CACHE_INSTITUTION_TTL', '86400'))  # 24 hours
+CACHE_CHAT_TTL = int(os.environ.get('CACHE_CHAT_TTL', '300'))             # 5 min
+CACHE_COURSES_TTL = int(os.environ.get('CACHE_COURSES_TTL', '21600'))     # 6 hours
+CACHE_GROUPS_TTL = int(os.environ.get('CACHE_GROUPS_TTL', '1800'))        # 30 min
+CACHE_NOTIFICATIONS_TTL = int(os.environ.get('CACHE_NOTIFICATIONS_TTL', '120'))  # 2 min
+CACHE_CONVERSATIONS_TTL = int(os.environ.get('CACHE_CONVERSATIONS_TTL', '300'))  # 5 min
+
+# Celery Configuration
+CELERY_APP = 'workspace'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
+CELERY_RESULT_BACKEND = 'django-db'  # Use django-celery-results
+CELERY_CACHE_BACKEND = 'default'  # Use Django cache for Celery
+
+# Celery Beat Schedule
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'daily-full-sync-all-users': {
+        'task': 'identity.tasks.daily_full_sync_all_users',
+        'schedule': crontab(hour=2, minute=0),  # 2 AM daily
+    },
+    'hourly-incremental-sync-active-users': {
+        'task': 'identity.tasks.hourly_incremental_sync',
+        'schedule': crontab(minute=0),  # Every hour
+    },
+    'every-2-min-notifications-sync': {
+        'task': 'identity.tasks.sync_notifications_active_users',
+        'schedule': crontab(minute='*/2'),  # Every 2 minutes
+    },
+    'every-5-min-conversations-sync': {
+        'task': 'identity.tasks.sync_conversations_active_users',
+        'schedule': crontab(minute='*/5'),  # Every 5 minutes
+    },
+    'every-6-hours-groups-sync': {
+        'task': 'identity.tasks.sync_groups_all_users',
+        'schedule': crontab(minute=0, hour='*/6'),  # Every 6 hours
+    },
+    'cleanup-expired-cache': {
+        'task': 'identity.tasks.cleanup_expired_cache',
+        'schedule': crontab(hour=3, minute=30),  # 3:30 AM daily
+    },
+    'cleanup-old-sync-logs': {
+        'task': 'identity.tasks.cleanup_old_sync_logs',
+        'schedule': crontab(hour=4, minute=0),  # 4 AM daily
+    },
+}
 
 
 # Email
