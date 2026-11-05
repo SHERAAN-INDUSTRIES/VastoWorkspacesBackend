@@ -4,3 +4,23 @@
 # Local development scripts (not for version control)
 start-workspace.sh
 workspace-worker.sh
+
+# --- Shared with the team (un-ignore specific paths) ---
+# Note: parent directories must be un-ignored before their contents can be re-included.
+
+# API contract documentation
+!docs/
+!docs/contract/
+!docs/contract/*.md
+
+# Data sync implementation
+!workspace/
+!workspace/identity/
+!workspace/identity/api_views.py
+!workspace/identity/tasks.py
+!workspace/identity/services/
+!workspace/identity/services/data_sync.py
+!workspace/identity/migrations/
+!workspace/identity/migrations/*.py
+!workspace/workspace/
+!workspace/workspace/celery.py
