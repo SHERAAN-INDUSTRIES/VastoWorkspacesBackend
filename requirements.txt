@@ -1,6 +1,15 @@
-Django==6.1.2
+Django==6.0.10
 Authlib==1.9.2
 requests==2.34.2
 python-dotenv==1.2.4
 dj-database-url==3.1.2
 psycopg[binary]>=3.2,<4
+djangorestframework==3.18.3
+django-redis==7.0.0
+celery==5.6.3
+redis==8.1.0
+kombu==5.7.0
+packaging==26.3
+django-celery-beat==2.9.0
+django-celery-results==2.6.0
+flower==2.2.0
