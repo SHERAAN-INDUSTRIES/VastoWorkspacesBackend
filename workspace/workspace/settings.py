@@ -225,6 +225,7 @@ CACHE_DOCUMENTS_TTL = int(os.environ.get('CACHE_DOCUMENTS_TTL', '900'))   # 15 m
 CACHE_INSTITUTION_TTL = int(os.environ.get('CACHE_INSTITUTION_TTL', '86400'))  # 24 hours
 CACHE_CHAT_TTL = int(os.environ.get('CACHE_CHAT_TTL', '300'))             # 5 min
 CACHE_COURSES_TTL = int(os.environ.get('CACHE_COURSES_TTL', '21600'))     # 6 hours
+CACHE_PROGRAMMES_TTL = int(os.environ.get('CACHE_PROGRAMMES_TTL', '86400'))  # 24 hours
 CACHE_GROUPS_TTL = int(os.environ.get('CACHE_GROUPS_TTL', '1800'))        # 30 min
 CACHE_NOTIFICATIONS_TTL = int(os.environ.get('CACHE_NOTIFICATIONS_TTL', '120'))  # 2 min
 CACHE_CONVERSATIONS_TTL = int(os.environ.get('CACHE_CONVERSATIONS_TTL', '300'))  # 5 min

@@ -19,7 +19,7 @@ def sync_user_data_task(self, user_id: int, sync_types: list = None, triggered_b
         service = DataSyncService()
 
         if sync_types is None:
-            sync_types = ['profile', 'documents', 'institution', 'courses', 'groups', 'notifications', 'conversations']
+            sync_types = ['profile', 'documents', 'institution', 'courses', 'programmes', 'groups', 'notifications', 'conversations']
 
         results = {}
         for sync_type in sync_types:
@@ -32,6 +32,8 @@ def sync_user_data_task(self, user_id: int, sync_types: list = None, triggered_b
                     results[sync_type] = service.sync_user_institution(user, triggered_by=triggered_by)
                 elif sync_type == 'courses':
                     results[sync_type] = service.sync_user_courses(user, triggered_by=triggered_by)
+                elif sync_type == 'programmes':
+                    results[sync_type] = service.sync_user_programmes(user, triggered_by=triggered_by)
                 elif sync_type == 'groups':
                     results[sync_type] = service.sync_user_groups(user, triggered_by=triggered_by)
                 elif sync_type == 'notifications':

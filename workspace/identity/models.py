@@ -161,6 +161,30 @@ class UserCourseCache(models.Model):
         return f'Course cache {self.vasto_course_id} for {self.user.username}'
 
 
+class UserProgrammeCache(models.Model):
+    """Cached academic programmes from Pwaninet."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='programme_caches'
+    )
+    vasto_programme_id = models.CharField(max_length=100)
+    cached_data = models.JSONField(default=dict)
+    last_synced_at = models.DateTimeField(auto_now=True)
+    cache_expires_at = models.DateTimeField()
+    sync_status = models.CharField(max_length=20, default='synced')
+
+    class Meta:
+        db_table = 'user_programme_cache'
+        unique_together = [['user', 'vasto_programme_id']]
+        indexes = [
+            models.Index(fields=['cache_expires_at']),
+        ]
+
+    def __str__(self):
+        return f'Programme cache {self.vasto_programme_id} for {self.user.username}'
+
+
 class UserGroupCache(models.Model):
     """Cached groups from Pwaninet."""
     user = models.ForeignKey(

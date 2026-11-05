@@ -14,6 +14,7 @@ urlpatterns = [
     path('user/documents/', api_views.user_documents, name='user-documents'),
     path('user/institution/', api_views.user_institution, name='user-institution'),
     path('user/courses/', api_views.user_courses, name='user-courses'),
+    path('user/programmes/', api_views.user_programmes, name='user-programmes'),
     path('user/groups/', api_views.user_groups, name='user-groups'),
     path('user/notifications/', api_views.user_notifications, name='user-notifications'),
     path('user/conversations/', api_views.user_conversations, name='user-conversations'),

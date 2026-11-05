@@ -15,6 +15,7 @@ from identity.models import (
     UserInstitutionCache,
     UserChatCache,
     UserCourseCache,
+    UserProgrammeCache,
     UserGroupCache,
     UserNotificationCache,
     UserConversationCache,
@@ -304,6 +305,65 @@ class DataSyncService:
             return cache.get(cache_key)
         return []
 
+    def sync_user_programmes(self, user, force_refresh: bool = False, triggered_by: str = 'user') -> bool:
+        """Sync user programmes from Pwaninet."""
+        vasto_user_id = self._get_vasto_user_id(user)
+        if not vasto_user_id:
+            self._log_sync(user, 'programmes', 'error', error='No Vasto user ID', triggered_by=triggered_by)
+            return False
+
+        data = self._fetch_from_pwaninet('programmes', vasto_user_id)
+        if not data:
+            self._log_sync(user, 'programmes', 'error', error='Failed to fetch from Pwaninet', triggered_by=triggered_by)
+            return False
+
+        programmes = data.get('programmes', [])
+        cache_expires = timezone.now() + timedelta(seconds=settings.CACHE_PROGRAMMES_TTL)
+
+        try:
+            UserProgrammeCache.objects.filter(user=user).delete()
+            for programme in programmes:
+                UserProgrammeCache.objects.create(
+                    user=user,
+                    vasto_programme_id=str(programme.get('id', '')),
+                    cached_data=programme,
+                    cache_expires_at=cache_expires,
+                )
+
+            cache.set(f"programmes:{user.id}", data, timeout=settings.CACHE_PROGRAMMES_TTL)
+            self._log_sync(user, 'programmes', 'success', items_synced=len(programmes), triggered_by=triggered_by)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to cache programmes for {user.username}: {e}")
+            self._log_sync(user, 'programmes', 'error', error=str(e), triggered_by=triggered_by)
+            return False
+
+    def get_user_programmes(self, user, force_refresh: bool = False, triggered_by: str = 'user') -> Optional[dict]:
+        """Get user programmes from cache or sync if needed."""
+        cache_key = f"programmes:{user.id}"
+        cached = cache.get(cache_key)
+        if cached and not force_refresh:
+            return cached
+
+        try:
+            rows = UserProgrammeCache.objects.filter(
+                user=user,
+                cache_expires_at__gt=timezone.now()
+            ).values_list('cached_data', flat=True)
+            programmes = list(rows)
+            if programmes and not force_refresh:
+                current_id = next(
+                    (p.get('id') for p in programmes if p.get('is_current')),
+                    programmes[0].get('id') if programmes else None,
+                )
+                return {'programmes': programmes, 'current_programme_id': current_id}
+        except Exception:
+            pass
+
+        if self.sync_user_programmes(user, force_refresh=True, triggered_by=triggered_by):
+            return cache.get(cache_key)
+        return {'programmes': [], 'current_programme_id': None}
+
     def sync_user_groups(self, user, force_refresh: bool = False, triggered_by: str = 'user') -> bool:
         """Sync user groups from Pwaninet."""
         vasto_user_id = self._get_vasto_user_id(user)
@@ -477,6 +537,7 @@ class DataSyncService:
         results['documents'] = self.sync_user_documents(user, triggered_by=triggered_by)
         results['institution'] = self.sync_user_institution(user, triggered_by=triggered_by)
         results['courses'] = self.sync_user_courses(user, triggered_by=triggered_by)
+        results['programmes'] = self.sync_user_programmes(user, triggered_by=triggered_by)
         results['groups'] = self.sync_user_groups(user, triggered_by=triggered_by)
         results['notifications'] = self.sync_user_notifications(user, triggered_by=triggered_by)
         results['conversations'] = self.sync_user_conversations(user, triggered_by=triggered_by)
@@ -492,7 +553,7 @@ class DataSyncService:
         deleted = {}
 
         for model in [UserProfileCache, UserDocumentCache, UserInstitutionCache,
-                     UserChatCache, UserCourseCache, UserGroupCache,
+                     UserChatCache, UserCourseCache, UserProgrammeCache, UserGroupCache,
                      UserNotificationCache, UserConversationCache]:
             count, _ = model.objects.filter(cache_expires_at__lt=now).delete()
             deleted[model.__name__] = count

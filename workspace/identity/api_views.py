@@ -65,6 +65,20 @@ def user_courses(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def user_programmes(request):
+    """Get cached user academic programmes."""
+    force_refresh = request.GET.get('refresh', '').lower() == 'true'
+    service = DataSyncService()
+    data = service.get_user_programmes(request.user, force_refresh=force_refresh, triggered_by='user')
+
+    if data is None:
+        return Response({'error': 'Programmes not available'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def user_groups(request):
     """Get cached user groups."""
     force_refresh = request.GET.get('refresh', '').lower() == 'true'
@@ -111,7 +125,7 @@ def sync_user_data(request):
     """Manually trigger sync for current user."""
     sync_types = request.data.get('types', None)
     if sync_types is None:
-        sync_types = ['profile', 'documents', 'institution', 'courses', 'groups', 'notifications', 'conversations']
+        sync_types = ['profile', 'documents', 'institution', 'courses', 'programmes', 'groups', 'notifications', 'conversations']
     elif not isinstance(sync_types, list):
         return Response({'error': 'types must be a list'}, status=status.HTTP_400_BAD_REQUEST)
 
