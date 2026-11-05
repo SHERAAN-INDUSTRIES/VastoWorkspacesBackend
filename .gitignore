@@ -7,6 +7,9 @@ workspace-worker.sh
 
 # --- Shared with the team (un-ignore specific paths) ---
 # Note: parent directories must be un-ignored before their contents can be re-included.
+!scripts/
+!scripts/sync-env-example.py
+!scripts/configure-service-token.py
 
 # API contract documentation
 !docs/

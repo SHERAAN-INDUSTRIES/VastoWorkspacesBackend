@@ -118,7 +118,7 @@ If the repository contains several nonstandard Python environments and none is a
 
 ### If setup needs to be repeated
 
-Rerun the relevant repository's `./scripts/setup-dev.sh`. It reuses the environment and applies any pending migrations. Vasto retains its existing signing key and registered client; it does not rotate secrets automatically. Workspaces can safely re-import the same credentials file. If an OAuth preflight fails, follow the error message, make sure Vasto is running, and rerun Workspaces setup.
+Rerun the relevant repository's `./scripts/setup-dev.sh`. It reuses the environment and applies any pending migrations. Both setup scripts add newly introduced `.env.example` fields without replacing existing values. Pwaninet retains its existing signing key and registered client; it does not rotate secrets automatically. Workspaces can safely re-import the same credentials file. On the first Workspaces setup, run Pwaninet setup first, then paste its generated service token at the hidden prompt; the value is saved locally in Workspaces `.env` and is never echoed. If an OAuth preflight fails, follow the error message, make sure Vasto is running, and rerun Workspaces setup.
 
 For contributors, run automated tests or expired-transaction cleanup as separate maintenance tasks when needed. They are not part of first-time setup.
 
