@@ -19,6 +19,9 @@ from identity.models import (
     UserGroupCache,
     UserNotificationCache,
     UserConversationCache,
+    UserProgrammeUnitCache,
+    UserTimetableCache,
+    UserFollowCache,
     SyncLog,
 )
 
@@ -529,6 +532,180 @@ class DataSyncService:
             return cache.get(cache_key)
         return []
 
+    def sync_user_programme_units(self, user, force_refresh: bool = False, triggered_by: str = 'user') -> bool:
+        """Sync user programme units from Pwaninet."""
+        vasto_user_id = self._get_vasto_user_id(user)
+        if not vasto_user_id:
+            self._log_sync(user, 'programme_units', 'error', error='No Vasto user ID', triggered_by=triggered_by)
+            return False
+
+        data = self._fetch_from_pwaninet('programme-units', vasto_user_id)
+        if not data:
+            self._log_sync(user, 'programme_units', 'error', error='Failed to fetch from Pwaninet', triggered_by=triggered_by)
+            return False
+
+        units = data.get('programme_units', [])
+        cache_expires = timezone.now() + timedelta(seconds=settings.CACHE_PROGRAMME_UNITS_TTL)
+
+        try:
+            UserProgrammeUnitCache.objects.filter(user=user).delete()
+            for unit in units:
+                UserProgrammeUnitCache.objects.create(
+                    user=user,
+                    vasto_unit_id=str(unit.get('id', '')),
+                    cached_data=unit,
+                    cache_expires_at=cache_expires,
+                )
+
+            cache.set(f"programme_units:{user.id}", units, timeout=settings.CACHE_PROGRAMME_UNITS_TTL)
+            self._log_sync(user, 'programme_units', 'success', items_synced=len(units), triggered_by=triggered_by)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to cache programme units for {user.username}: {e}")
+            self._log_sync(user, 'programme_units', 'error', error=str(e), triggered_by=triggered_by)
+            return False
+
+    def get_user_programme_units(self, user, force_refresh: bool = False, triggered_by: str = 'user') -> Optional[list]:
+        """Get user programme units from cache or sync if needed."""
+        cache_key = f"programme_units:{user.id}"
+        cached = cache.get(cache_key)
+        if cached and not force_refresh:
+            return cached
+
+        try:
+            units = UserProgrammeUnitCache.objects.filter(
+                user=user,
+                cache_expires_at__gt=timezone.now()
+            ).values_list('cached_data', flat=True)
+            if units and not force_refresh:
+                return list(units)
+        except Exception:
+            pass
+
+        if self.sync_user_programme_units(user, force_refresh=True, triggered_by=triggered_by):
+            return cache.get(cache_key)
+        return []
+
+    def sync_user_timetable(self, user, force_refresh: bool = False, triggered_by: str = 'user') -> bool:
+        """Sync user timetable(s) from Pwaninet."""
+        vasto_user_id = self._get_vasto_user_id(user)
+        if not vasto_user_id:
+            self._log_sync(user, 'timetable', 'error', error='No Vasto user ID', triggered_by=triggered_by)
+            return False
+
+        data = self._fetch_from_pwaninet('timetable', vasto_user_id)
+        if not data:
+            self._log_sync(user, 'timetable', 'error', error='Failed to fetch from Pwaninet', triggered_by=triggered_by)
+            return False
+
+        timetables = data.get('timetables', [])
+        cache_expires = timezone.now() + timedelta(seconds=settings.CACHE_TIMETABLE_TTL)
+
+        try:
+            UserTimetableCache.objects.filter(user=user).delete()
+            for timetable in timetables:
+                UserTimetableCache.objects.create(
+                    user=user,
+                    vasto_timetable_id=str(timetable.get('id', '')),
+                    cached_data=timetable,
+                    cache_expires_at=cache_expires,
+                )
+
+            cache.set(f"timetable:{user.id}", timetables, timeout=settings.CACHE_TIMETABLE_TTL)
+            self._log_sync(user, 'timetable', 'success', items_synced=len(timetables), triggered_by=triggered_by)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to cache timetable for {user.username}: {e}")
+            self._log_sync(user, 'timetable', 'error', error=str(e), triggered_by=triggered_by)
+            return False
+
+    def get_user_timetable(self, user, force_refresh: bool = False, triggered_by: str = 'user') -> Optional[list]:
+        """Get user timetable(s) from cache or sync if needed."""
+        cache_key = f"timetable:{user.id}"
+        cached = cache.get(cache_key)
+        if cached and not force_refresh:
+            return cached
+
+        try:
+            timetables = UserTimetableCache.objects.filter(
+                user=user,
+                cache_expires_at__gt=timezone.now()
+            ).values_list('cached_data', flat=True)
+            if timetables and not force_refresh:
+                return list(timetables)
+        except Exception:
+            pass
+
+        if self.sync_user_timetable(user, force_refresh=True, triggered_by=triggered_by):
+            return cache.get(cache_key)
+        return []
+
+    def sync_user_follows(self, user, force_refresh: bool = False, triggered_by: str = 'user') -> bool:
+        """Sync user follows from Pwaninet."""
+        vasto_user_id = self._get_vasto_user_id(user)
+        if not vasto_user_id:
+            self._log_sync(user, 'follows', 'error', error='No Vasto user ID', triggered_by=triggered_by)
+            return False
+
+        data = self._fetch_from_pwaninet('follows', vasto_user_id)
+        if not data:
+            self._log_sync(user, 'follows', 'error', error='Failed to fetch from Pwaninet', triggered_by=triggered_by)
+            return False
+
+        follows = data.get('follows', [])
+        cache_expires = timezone.now() + timedelta(seconds=settings.CACHE_FOLLOWS_TTL)
+        sync_meta = {
+            'following_count': data.get('following_count', len(follows)),
+            'followers_count': data.get('followers_count', 0),
+        }
+
+        try:
+            UserFollowCache.objects.filter(user=user).delete()
+            for follow in follows:
+                UserFollowCache.objects.create(
+                    user=user,
+                    vasto_follow_id=str(follow.get('id', '')),
+                    cached_data={**follow, '_sync_meta': sync_meta},
+                    cache_expires_at=cache_expires,
+                )
+
+            cache.set(f"follows:{user.id}", data, timeout=settings.CACHE_FOLLOWS_TTL)
+            self._log_sync(user, 'follows', 'success', items_synced=len(follows), triggered_by=triggered_by)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to cache follows for {user.username}: {e}")
+            self._log_sync(user, 'follows', 'error', error=str(e), triggered_by=triggered_by)
+            return False
+
+    def get_user_follows(self, user, force_refresh: bool = False, triggered_by: str = 'user') -> Optional[dict]:
+        """Get user follows from cache or sync if needed."""
+        cache_key = f"follows:{user.id}"
+        cached = cache.get(cache_key)
+        if cached and not force_refresh:
+            return cached
+
+        try:
+            rows = UserFollowCache.objects.filter(
+                user=user,
+                cache_expires_at__gt=timezone.now()
+            ).values_list('cached_data', flat=True)
+            cached_follows = list(rows)
+            if cached_follows and not force_refresh:
+                sync_meta = cached_follows[0].pop('_sync_meta', {}) if cached_follows else {}
+                for follow in cached_follows:
+                    follow.pop('_sync_meta', None)
+                return {
+                    'follows': cached_follows,
+                    'following_count': sync_meta.get('following_count', len(cached_follows)),
+                    'followers_count': sync_meta.get('followers_count', 0),
+                }
+        except Exception:
+            pass
+
+        if self.sync_user_follows(user, force_refresh=True, triggered_by=triggered_by):
+            return cache.get(cache_key)
+        return {'follows': [], 'following_count': 0, 'followers_count': 0}
+
     def sync_all_user_data(self, user, triggered_by: str = 'scheduled') -> dict:
         """Sync all data types for a user."""
         results = {}
@@ -541,6 +718,9 @@ class DataSyncService:
         results['groups'] = self.sync_user_groups(user, triggered_by=triggered_by)
         results['notifications'] = self.sync_user_notifications(user, triggered_by=triggered_by)
         results['conversations'] = self.sync_user_conversations(user, triggered_by=triggered_by)
+        results['programme_units'] = self.sync_user_programme_units(user, triggered_by=triggered_by)
+        results['timetable'] = self.sync_user_timetable(user, triggered_by=triggered_by)
+        results['follows'] = self.sync_user_follows(user, triggered_by=triggered_by)
 
         self._log_sync(user, 'full', 'success' if all(results.values()) else 'partial',
                       items_synced=sum(1 for v in results.values() if v), triggered_by=triggered_by)
@@ -554,7 +734,8 @@ class DataSyncService:
 
         for model in [UserProfileCache, UserDocumentCache, UserInstitutionCache,
                      UserChatCache, UserCourseCache, UserProgrammeCache, UserGroupCache,
-                     UserNotificationCache, UserConversationCache]:
+                     UserNotificationCache, UserConversationCache, UserProgrammeUnitCache,
+                     UserTimetableCache, UserFollowCache]:
             count, _ = model.objects.filter(cache_expires_at__lt=now).delete()
             deleted[model.__name__] = count
 

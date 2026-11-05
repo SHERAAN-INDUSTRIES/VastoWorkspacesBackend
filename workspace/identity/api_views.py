@@ -119,13 +119,55 @@ def user_conversations(request):
     return Response({'conversations': data})
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_programme_units(request):
+    """Get cached user programme units."""
+    force_refresh = request.GET.get('refresh', '').lower() == 'true'
+    service = DataSyncService()
+    data = service.get_user_programme_units(request.user, force_refresh=force_refresh, triggered_by='user')
+
+    if data is None:
+        return Response({'error': 'Programme units not available'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    return Response({'programme_units': data})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_timetable(request):
+    """Get cached user timetable(s)."""
+    force_refresh = request.GET.get('refresh', '').lower() == 'true'
+    service = DataSyncService()
+    data = service.get_user_timetable(request.user, force_refresh=force_refresh, triggered_by='user')
+
+    if data is None:
+        return Response({'error': 'Timetable not available'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    return Response({'timetables': data})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_follows(request):
+    """Get cached user follows."""
+    force_refresh = request.GET.get('refresh', '').lower() == 'true'
+    service = DataSyncService()
+    data = service.get_user_follows(request.user, force_refresh=force_refresh, triggered_by='user')
+
+    if data is None:
+        return Response({'error': 'Follows not available'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    return Response(data)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def sync_user_data(request):
     """Manually trigger sync for current user."""
     sync_types = request.data.get('types', None)
     if sync_types is None:
-        sync_types = ['profile', 'documents', 'institution', 'courses', 'programmes', 'groups', 'notifications', 'conversations']
+        sync_types = ['profile', 'documents', 'institution', 'courses', 'programmes', 'groups', 'notifications', 'conversations', 'programme_units', 'timetable', 'follows']
     elif not isinstance(sync_types, list):
         return Response({'error': 'types must be a list'}, status=status.HTTP_400_BAD_REQUEST)
 

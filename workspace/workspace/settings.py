@@ -229,6 +229,9 @@ CACHE_PROGRAMMES_TTL = int(os.environ.get('CACHE_PROGRAMMES_TTL', '86400'))  # 2
 CACHE_GROUPS_TTL = int(os.environ.get('CACHE_GROUPS_TTL', '1800'))        # 30 min
 CACHE_NOTIFICATIONS_TTL = int(os.environ.get('CACHE_NOTIFICATIONS_TTL', '120'))  # 2 min
 CACHE_CONVERSATIONS_TTL = int(os.environ.get('CACHE_CONVERSATIONS_TTL', '300'))  # 5 min
+CACHE_PROGRAMME_UNITS_TTL = int(os.environ.get('CACHE_PROGRAMME_UNITS_TTL', '21600'))  # 6 hours
+CACHE_TIMETABLE_TTL = int(os.environ.get('CACHE_TIMETABLE_TTL', '21600'))      # 6 hours
+CACHE_FOLLOWS_TTL = int(os.environ.get('CACHE_FOLLOWS_TTL', '1800'))           # 30 min
 
 # Celery Configuration
 CELERY_APP = 'workspace'

@@ -21,7 +21,7 @@ For local development, Vasto is typically at `http://127.0.0.1:8000`, Workspaces
 
 `GET /api/auth/vasto/start/`
 
-Called by the frontend through its same-origin `/api` proxy. No JSON body is sent.
+Called by top-level browser navigation to the Workspaces API origin. No JSON body is sent.
 
 - **Success:** `302 Found` redirect to Vasto's authorization endpoint. Workspaces creates/binds a session transaction and may set its session cookie.
 - **Failure:** the framework/provider may return an error response if the authorization client or provider configuration is unavailable.
@@ -50,7 +50,7 @@ The message varies by failure. Invalid/expired transaction and missing authoriza
 
 `GET /api/auth/me/`
 
-Send `Accept: application/json` and include browser credentials. The frontend uses the Workspaces session cookie automatically when calling its same origin.
+Send `Accept: application/json` and include browser credentials. For cross-origin frontend requests, use `credentials: 'include'`; Workspaces must allow the exact frontend origin and credentials through CORS.
 
 - **200 OK:** authenticated profile:
 
@@ -125,4 +125,4 @@ The current frontend integration calls only:
 | GET | `/api/auth/vasto/start/` | Begin sign-in; browser follows redirects. |
 | GET | `/api/auth/me/` | Read the current Workspaces session and profile. |
 
-The callback is reached by redirect and should not be called directly. Logout is available in the backend but is not currently wired into the frontend. The Vite development proxy forwards `/api` to Workspaces; production must provide an equivalent same-origin/reverse-proxy arrangement or correctly configured credentialed CORS and cookie settings.
+The callback is reached by redirect and should not be called directly. Logout is available in the backend but is not currently wired into the frontend. The frontend calls Workspaces directly and requires correctly configured credentialed CORS and compatible cookie settings.

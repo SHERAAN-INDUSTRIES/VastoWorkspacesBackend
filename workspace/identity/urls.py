@@ -18,5 +18,8 @@ urlpatterns = [
     path('user/groups/', api_views.user_groups, name='user-groups'),
     path('user/notifications/', api_views.user_notifications, name='user-notifications'),
     path('user/conversations/', api_views.user_conversations, name='user-conversations'),
+    path('user/programme-units/', api_views.user_programme_units, name='user-programme-units'),
+    path('user/timetable/', api_views.user_timetable, name='user-timetable'),
+    path('user/follows/', api_views.user_follows, name='user-follows'),
     path('user/sync/', api_views.sync_user_data, name='user-sync'),
 ]

@@ -262,6 +262,78 @@ class UserConversationCache(models.Model):
         return f'Conversation cache {self.vasto_conversation_id} for {self.user.username}'
 
 
+class UserProgrammeUnitCache(models.Model):
+    """Cached programme units from Pwaninet."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='programme_unit_caches'
+    )
+    vasto_unit_id = models.CharField(max_length=100)
+    cached_data = models.JSONField(default=dict)
+    last_synced_at = models.DateTimeField(auto_now=True)
+    cache_expires_at = models.DateTimeField()
+    sync_status = models.CharField(max_length=20, default='synced')
+
+    class Meta:
+        db_table = 'user_programme_unit_cache'
+        unique_together = [['user', 'vasto_unit_id']]
+        indexes = [
+            models.Index(fields=['cache_expires_at']),
+        ]
+
+    def __str__(self):
+        return f'Programme unit cache {self.vasto_unit_id} for {self.user.username}'
+
+
+class UserTimetableCache(models.Model):
+    """Cached timetables from Pwaninet."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='timetable_caches'
+    )
+    vasto_timetable_id = models.CharField(max_length=100)
+    cached_data = models.JSONField(default=dict)
+    last_synced_at = models.DateTimeField(auto_now=True)
+    cache_expires_at = models.DateTimeField()
+    sync_status = models.CharField(max_length=20, default='synced')
+
+    class Meta:
+        db_table = 'user_timetable_cache'
+        unique_together = [['user', 'vasto_timetable_id']]
+        indexes = [
+            models.Index(fields=['cache_expires_at']),
+        ]
+
+    def __str__(self):
+        return f'Timetable cache {self.vasto_timetable_id} for {self.user.username}'
+
+
+class UserFollowCache(models.Model):
+    """Cached follows from Pwaninet."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='follow_caches'
+    )
+    vasto_follow_id = models.CharField(max_length=100)
+    cached_data = models.JSONField(default=dict)
+    last_synced_at = models.DateTimeField(auto_now=True)
+    cache_expires_at = models.DateTimeField()
+    sync_status = models.CharField(max_length=20, default='synced')
+
+    class Meta:
+        db_table = 'user_follow_cache'
+        unique_together = [['user', 'vasto_follow_id']]
+        indexes = [
+            models.Index(fields=['cache_expires_at']),
+        ]
+
+    def __str__(self):
+        return f'Follow cache {self.vasto_follow_id} for {self.user.username}'
+
+
 class SyncLog(models.Model):
     """Log of sync operations for monitoring."""
     user = models.ForeignKey(

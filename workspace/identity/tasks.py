@@ -19,7 +19,7 @@ def sync_user_data_task(self, user_id: int, sync_types: list = None, triggered_b
         service = DataSyncService()
 
         if sync_types is None:
-            sync_types = ['profile', 'documents', 'institution', 'courses', 'programmes', 'groups', 'notifications', 'conversations']
+            sync_types = ['profile', 'documents', 'institution', 'courses', 'programmes', 'groups', 'notifications', 'conversations', 'programme_units', 'timetable', 'follows']
 
         results = {}
         for sync_type in sync_types:
@@ -40,6 +40,12 @@ def sync_user_data_task(self, user_id: int, sync_types: list = None, triggered_b
                     results[sync_type] = service.sync_user_notifications(user, triggered_by=triggered_by)
                 elif sync_type == 'conversations':
                     results[sync_type] = service.sync_user_conversations(user, triggered_by=triggered_by)
+                elif sync_type == 'programme_units':
+                    results[sync_type] = service.sync_user_programme_units(user, triggered_by=triggered_by)
+                elif sync_type == 'timetable':
+                    results[sync_type] = service.sync_user_timetable(user, triggered_by=triggered_by)
+                elif sync_type == 'follows':
+                    results[sync_type] = service.sync_user_follows(user, triggered_by=triggered_by)
             except Exception as e:
                 logger.error(f"Error syncing {sync_type} for user {user_id}: {e}")
                 results[sync_type] = False
