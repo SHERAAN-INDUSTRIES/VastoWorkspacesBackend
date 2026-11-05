@@ -39,6 +39,7 @@ ALLOWED_HOSTS = [host.strip() for host in os.environ.get('WORKSPACES_ALLOWED_HOS
 # Application definition
 
 INSTALLED_APPS = [
+    'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -53,6 +54,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -168,6 +170,18 @@ VASTO_CLIENT_SECRET = os.environ.get('VASTO_CLIENT_SECRET', '')
 VASTO_REDIRECT_URI = os.environ.get('VASTO_REDIRECT_URI', 'http://127.0.0.1:8001/api/auth/vasto/callback/')
 WORKSPACES_FRONTEND_URL = os.environ.get('WORKSPACES_FRONTEND_URL', '')
 IDENTITY_TRANSACTION_TTL_SECONDS = 600
+
+# CORS — allow the Workspaces frontend origin(s). Credentials are required
+# because the frontend authenticates with the Django session cookie.
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        'CORS_ALLOWED_ORIGINS',
+        'http://127.0.0.1:3000,http://localhost:3000',
+    ).split(',')
+    if origin.strip()
+]
+CORS_ALLOW_CREDENTIALS = True
 
 # Pwaninet Internal API Configuration
 VASTO_API_BASE_URL = os.environ.get('VASTO_API_BASE_URL', 'http://127.0.0.1:8000')
