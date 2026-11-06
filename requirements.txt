@@ -14,3 +14,5 @@ packaging==26.3
 django-celery-beat==2.9.0
 django-celery-results==2.6.0
 flower==2.2.0
+
+uvicorn[standard]>=0.30,<1

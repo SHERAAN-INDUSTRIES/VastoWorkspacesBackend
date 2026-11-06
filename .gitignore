@@ -27,3 +27,12 @@ workspace-worker.sh
 !workspace/identity/migrations/*.py
 !workspace/workspace/
 !workspace/workspace/celery.py
+
+# Local development service logs and PID files
+.dev-services/
+
+# Share the team setup/service entry points
+!start-workspace.sh
+!workspace-worker.sh
+!scripts/setup-oidc.sh
+!scripts/dev-services.py

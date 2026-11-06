@@ -77,7 +77,7 @@ Follow its prompts to choose a developer identifier and a Vasto staff account to
 When setup finishes, start Vasto. The example below uses the default `.venv`; if setup reused another environment, use the exact server command printed at the end:
 
 ```sh
-.venv/bin/python manage.py runserver 127.0.0.1:8000 --settings=pwaninet.settings.local
+DJANGO_SETTINGS_MODULE=pwaninet.settings.local .venv/bin/python -m uvicorn pwaninet.asgi:application --host 127.0.0.1 --port 8000 --reload
 ```
 
 Leave this terminal open. Workspaces checks the live Vasto server during its own setup, so Vasto must be running first.
@@ -101,7 +101,7 @@ Wait for the script to report that setup and the Vasto preflight are complete. I
 In the Workspaces terminal, start the backend. This example uses `.venv`; if setup reused another environment, use the exact server command it printed:
 
 ```sh
-.venv/bin/python workspace/manage.py runserver 127.0.0.1:8001
+.venv/bin/python -m uvicorn workspace.asgi:application --app-dir workspace --host 127.0.0.1 --port 8001 --reload
 ```
 
 Leave both server terminals open. In your browser, visit:
@@ -198,3 +198,53 @@ cd workspace && ../.venv/bin/flower -A workspace --port=5555
 - [Vasto OIDC client and authentication API](docs/authentication/vasto-oidc-client.md) — Workspaces OIDC flow, environment setup, identity mapping, sessions, API contract, and troubleshooting.
 
 React frontend setup and integration documentation are maintained separately by the frontend team.
+
+## Team setup and recovery
+
+From the repository root, run:
+
+```bash
+bash scripts/setup-dev.sh --credentials-file ~/.config/vasto-workspaces/YOUR_IDENTIFIER-local.env
+bash start-workspace.sh
+```
+
+Pwaninet must run on `http://127.0.0.1:8000`; Workspaces uses Uvicorn on
+`http://127.0.0.1:8001`. Setup defaults to its own SQLite database, so PostgreSQL
+is not needed unless you explicitly configure a dedicated database URL.
+
+Setup checks the configured Celery broker and Redis cache URLs, reuses an
+available Redis instance, or starts local Redis with `redis-server` or Docker.
+Custom Redis ports are read from `.env`; update `CELERY_BROKER_URL` and
+`REDIS_CACHE_URL` together. Password-protected, TLS, or remote Redis must
+already be provisioned. Setup checks connectivity without printing passwords.
+After migrations succeed, it starts a Celery worker and Beat in the background.
+Responsive workers and managed Beat processes are reused on subsequent runs.
+Do not start another Beat manually while the managed scheduler is running.
+Logs and PID files are in `workspace/.dev-services/`; stop a managed process
+with `kill "$(cat workspace/.dev-services/worker.pid)"` or the corresponding
+`beat.pid` when finished. `bash workspace-worker.sh` retries service startup.
+
+If token entry, OAuth registration checks, or provider availability fails,
+setup continues independent database and service steps and lists unfinished
+steps at the end. A nonzero exit means setup remains incomplete. Missing Python
+or failed dependency installation still blocks Python-dependent steps.
+Rerun setup after fixing errors; existing credentials are retained.
+
+The Pwaninet `VASTO_SERVICE_TOKEN` is a service credential, separate from the
+OAuth client secret and browser session. Recover it in the Pwaninet repository:
+
+```bash
+bash scripts/setup-dev.sh --show-service-token-only
+```
+
+Paste it at Workspaces' hidden token prompt. OAuth client credentials remain
+in the private file passed with `--credentials-file`; neither credential is
+rotated just because setup is rerun.
+
+Both setup scripts are tracked as executable in Git, so normal Linux/macOS/WSL
+checkouts preserve that permission. Using `bash scripts/setup-dev.sh` works even
+if an archive or filesystem loses executable permissions. No activation command
+is required: setup selects its Python environment. To use `./` on such a copy,
+run `chmod +x scripts/setup-dev.sh start-workspace.sh workspace-worker.sh` once.
+If setup selected a non-default Python environment, use its printed Uvicorn
+command or activate that environment before using the start scripts.

@@ -28,6 +28,23 @@ done
 printf '\n%bVasto Workspaces · Local setup%b\n' "$C_BLUE" "$C_RESET"
 printf 'This setup checks your tools, updates missing .env fields, and prepares the database.\n'
 
+FAILURES=()
+run_step() {
+  local label="$1"; shift
+  if "$@"; then success "$label"; return 0; fi
+  FAILURES+=("$label")
+  printf 'Needs attention: %s; continuing independent steps.\n' "$label" >&2
+  return 1
+}
+setup_summary() {
+  local status=$?
+  printf '\nWorkspaces setup summary (exit %s)\n' "$status"
+  if ((${#FAILURES[@]})); then printf '  Needs attention: %s\n' "${FAILURES[@]}"; fi
+  echo "  Saved configuration: $ROOT/.env (retained across retries)."
+  echo "  Celery logs/PID files: $ROOT/workspace/.dev-services/"
+  if (( status )); then echo '  Setup is incomplete. Fix reported errors and rerun; completed steps and credentials are retained.'; fi
+}
+trap setup_summary EXIT
 section 'Checking your computer'
 case "$(uname -s)" in Linux*|Darwin*) ;; *) printf 'Unsupported OS. Use Linux or macOS, or follow the manual setup in README.md.\n' >&2; exit 1;; esac
 command -v git >/dev/null || { printf 'Git is required. Install Git and rerun.\n' >&2; exit 1; }
@@ -84,36 +101,6 @@ else
   PY="$VENV_DIR/bin/python"
   printf 'Created Python environment: %s\n' "$VENV_DIR"
 fi
-section 'Installing backend dependencies'
-"$PY" -m pip install --upgrade pip >/dev/null || { printf 'Could not upgrade pip. Check network/package-index access.\n' >&2; exit 1; }
-"$PY" -m pip install -r requirements.txt || { printf 'Dependency installation failed. Review the error above and repository requirements.\n' >&2; exit 1; }
-"$PY" -m pip install celery redis django-redis django-celery-beat django-celery-results flower packaging || { printf 'Failed to install Celery/Redis dependencies.\n' >&2; exit 1; }
-"$PY" -m pip check || { printf 'Installed dependencies have conflicts.\n' >&2; exit 1; }
-
-section 'Checking Redis'
-if ! command -v redis-cli >/dev/null 2>&1; then
-  printf 'Redis is not installed. Please install Redis or use a managed Redis service.\n' >&2
-  printf 'For local development: sudo apt install redis-server\n' >&2
-  printf 'Then start Redis: redis-server\n' >&2
-  exit 1
-fi
-
-if ! redis-cli ping >/dev/null 2>&1; then
-  printf 'Redis is not running. Starting Redis server...\n'
-  if command -v redis-server >/dev/null 2>&1; then
-    redis-server --daemonize yes >/dev/null 2>&1
-    sleep 2
-    if ! redis-cli ping >/dev/null 2>&1; then
-      printf 'Failed to start Redis server. Please start it manually.\n' >&2
-      exit 1
-    fi
-    printf 'Redis server started successfully.\n'
-  else
-    printf 'Redis server not found. Please install and start Redis.\n' >&2
-    exit 1
-  fi
-fi
-
 if [[ ! -e .env ]]; then
   [[ -f .env.example ]] || { printf 'Missing .env.example.\n' >&2; exit 1; }
   cp .env.example .env
@@ -123,7 +110,7 @@ else printf 'Retained existing .env.\n'; fi
 "$PY" scripts/sync-env-example.py .env.example .env
 chmod 600 .env
 if ! grep -Eq '^WORKSPACES_SECRET_KEY=.{20,}$' .env; then
-  secret="$("$PY" -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())')" || { printf 'Could not generate Django secret key.\n' >&2; exit 1; }
+  secret="$("$PY" -c 'import secrets; print(secrets.token_hex(32))')" || { printf 'Could not generate Django secret key.\n' >&2; exit 1; }
   if grep -q '^WORKSPACES_SECRET_KEY=' .env; then sed -i.bak "s|^WORKSPACES_SECRET_KEY=.*|WORKSPACES_SECRET_KEY=$secret|" .env && rm -f .env.bak
   else printf '\nWORKSPACES_SECRET_KEY=%s\n' "$secret" >> .env; fi
   chmod 600 .env
@@ -131,56 +118,35 @@ if ! grep -Eq '^WORKSPACES_SECRET_KEY=.{20,}$' .env; then
   printf 'Generated a local Django secret key in .env (value not displayed).\n'
 fi
 
+export PY ROOT CREDENTIALS_FILE INTERACTIVE
+section 'Installing backend dependencies'
+run_step "pip upgrade" "$PY" -m pip install --upgrade pip || true
+"$PY" -m pip install -r requirements.txt || { printf 'Dependency installation failed. Review the error above and repository requirements.\n' >&2; exit 1; }
+run_step "Dependency consistency" "$PY" -m pip check || true
+
+
 section 'Connecting to Pwaninet'
 if ! grep -Eq '^VASTO_SERVICE_TOKEN=.+$' .env; then
-  "$PY" scripts/configure-service-token.py .env || exit $?
+  run_step 'Pwaninet service token' "$PY" scripts/configure-service-token.py .env || true
 else
   success 'Pwaninet service token is already configured.'
 fi
-
-section 'Configuring Vasto sign-in'
-# Check if OAuth credentials are already configured
-if grep -q '^VASTO_CLIENT_ID=.' .env && grep -q '^VASTO_CLIENT_SECRET=.' .env; then
-  printf 'OAuth credentials already configured in .env, skipping credential import.\n'
-else
-  if [[ -n "$CREDENTIALS_FILE" ]]; then
-    "$PY" scripts/import-oidc-credentials.py "$CREDENTIALS_FILE" || exit $?
-  elif ((INTERACTIVE)); then
-    "$PY" scripts/import-oidc-credentials.py --interactive || exit $?
-  else
-    shopt -s nullglob
-    local_credentials=("$HOME"/.config/vasto-workspaces/*-local.env)
-    shopt -u nullglob
-    if ((${#local_credentials[@]} == 1)); then
-      "$PY" scripts/import-oidc-credentials.py "${local_credentials[0]}" || exit $?
-    elif [[ -t 0 ]]; then
-      if ((${#local_credentials[@]} > 1)); then
-        printf 'Found multiple local Vasto credential files.\n'
-        read -r -p 'Enter the file path to use (blank to enter credentials): ' CREDENTIALS_FILE
-      fi
-      if [[ -n "$CREDENTIALS_FILE" ]]; then
-        "$PY" scripts/import-oidc-credentials.py "$CREDENTIALS_FILE" || exit $?
-      else
-        "$PY" scripts/import-oidc-credentials.py --interactive || exit $?
-      fi
-    else
-      printf 'No Vasto credentials file was selected. Pass --credentials-file PATH or run this script in a terminal for hidden interactive setup.\n' >&2
-      exit 1
-    fi
+run_step 'OAuth credential import' bash scripts/setup-oidc.sh || true
+cd "$ROOT/workspace"
+MIGRATED=0
+if run_step 'Django settings check' "$PY" manage.py check; then
+  if run_step 'Database connectivity' "$PY" manage.py shell -c 'from django.db import connection; connection.ensure_connection()'; then
+    if run_step 'Database migrations' "$PY" manage.py migrate --noinput; then MIGRATED=1; fi
   fi
 fi
-section 'Checking settings and preparing the database'
-cd "$ROOT/workspace"
-"$PY" manage.py check || { printf 'Django settings/system check failed. Review .env and the message above.\n' >&2; exit 1; }
-"$PY" manage.py shell -c 'from django.db import connection; connection.ensure_connection()' >/dev/null 2>&1 || { printf 'Workspaces database is not accessible. Check WORKSPACES_DATABASE_URL or local SQLite permissions; no migrations were run.\n' >&2; exit 1; }
-"$PY" manage.py migrate || { printf 'Database migration failed.\n' >&2; exit 1; }
-"$PY" manage.py check_vasto_oidc || { printf 'Vasto OIDC preflight failed. Start Vasto at 127.0.0.1:8000, verify its registration and credentials, then rerun this setup script.\n' >&2; exit 1; }
-
-success 'Workspaces setup and Vasto OIDC preflight are complete.'
-printf 'Start Workspaces with: %q %q runserver 127.0.0.1:8001\n' "$PY" "$ROOT/workspace/manage.py"
-printf '\nTo start Celery worker (in another terminal):\n'
-printf '  cd %q && %q celery -A workspace worker --loglevel=info --concurrency=2\n' "$ROOT/workspace" "$PY"
-printf '\nTo start Celery Beat scheduler (in another terminal):\n'
-printf '  cd %q && %q celery -A workspace beat --loglevel=info\n' "$ROOT/workspace" "$PY"
-printf '\nTo monitor Celery with Flower (in another terminal):\n'
-printf '  cd %q && %q flower -A workspace --port=5555\n' "$ROOT/workspace" "$PY"
+# Provider availability does not block local Redis/worker setup.
+run_step 'Pwaninet OAuth preflight' "$PY" manage.py check_vasto_oidc || true
+if (( MIGRATED )); then
+  run_step 'Redis and Celery startup' "$PY" "$ROOT/scripts/dev-services.py" start --root "$ROOT/workspace" --app workspace --settings workspace.settings || true
+else
+  run_step 'Redis connectivity' "$PY" "$ROOT/scripts/dev-services.py" check --root "$ROOT/workspace" --app workspace --settings workspace.settings || true
+  FAILURES+=('Celery startup skipped until database migrations succeed')
+fi
+printf '\nStart Workspaces: %q -m uvicorn workspace.asgi:application --app-dir %q --host 127.0.0.1 --port 8001 --reload\n' "$PY" "$ROOT/workspace"
+if ((${#FAILURES[@]})); then exit 1; fi
+success 'Workspaces setup completed.'
